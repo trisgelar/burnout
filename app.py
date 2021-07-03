@@ -30,12 +30,12 @@ from object_detection.utils import ops as utils_ops
 from object_detection.utils import label_map_util
 from object_detection.utils import visualization_utils as vis_util
 
-print("TF version:", tf.__version__)
-if tf.config.list_physical_devices('GPU'):
-    print("GPU is available",'\n')
-    print(tf.config.list_physical_devices('GPU'))
-else:
-    print("GPU is not available", '\n')
+# print("TF version:", tf.__version__)
+# if tf.config.list_physical_devices('GPU'):
+#     print("GPU is available",'\n')
+#     print(tf.config.list_physical_devices('GPU'))
+# else:
+#     print("GPU is not available", '\n')
 
 from streamlit_webrtc import (
     AudioProcessorBase,
@@ -142,17 +142,21 @@ WEBRTC_CLIENT_SETTINGS = ClientSettings(
 def main():
     st.header("Realtime Burnout Detection Application")
 
-    burnout_detection_page = "Real time burnout detection (sendrecv)"
+    burnout_detection_page = "Video Based burnout detection (sendrecv)"
+    realtime_burnout_detection_page = "Microscope Based burnout detection (sendrecv)"
     app_mode = st.sidebar.selectbox(
         "Choose the app mode",
         [
             burnout_detection_page,
+            realtime_burnout_detection_page,
         ],
     )
     st.subheader(app_mode)
 
     if app_mode == burnout_detection_page:
         app_burnout_detection()
+    elif app_mode == realtime_burnout_detection_page:
+        app_realtime_burnout_detection()
 
     logger.debug("=== Alive threads ===")
     for thread in threading.enumerate():
@@ -303,6 +307,52 @@ def app_object_detection():
         "Many thanks to the project."
     )
 
+def app_realtime_burnout_detection():
+    PATH_TO_LABELS = os.path.join('models', 'labelmap.pbtxt')
+    PATH_TO_SAVED_MODEL = os.path.join('models', 'saved_model')
+
+    class OpenCVVideoProcessor(VideoProcessorBase):
+        type: Literal["noop", "burnout"]
+
+        def __init__(self) -> None:
+            self.type = "burnout"
+            self.category_index = label_map_util.create_category_index_from_labelmap(PATH_TO_LABELS, use_display_name=True)
+            self.detection_model = tf.saved_model.load(str(PATH_TO_SAVED_MODEL))
+
+
+        def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+            img = frame.to_ndarray(format="bgr24")
+
+            if self.type == "noop":
+                pass
+            elif self.type == "burnout":
+                output_dict = run_inference_for_single_image(self.detection_model, img)
+                img = vis_util.visualize_boxes_and_labels_on_image_array( img, 
+                    output_dict['detection_boxes'], 
+                    output_dict['detection_classes'],
+                    output_dict['detection_scores'],
+                    self.category_index,
+                    instance_masks=output_dict.get('detection_masks_reframed', None),
+                    use_normalized_coordinates=True,
+                    min_score_thresh=.5,
+                    line_thickness=8
+                )
+
+            return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+    webrtc_ctx = webrtc_streamer(
+        key=f"realtime-burnout-detection",
+        mode=WebRtcMode.SENDRECV,
+        client_settings=WEBRTC_CLIENT_SETTINGS,
+        video_processor_factory=OpenCVVideoProcessor,
+        async_processing=True,
+    )
+
+    if webrtc_ctx.video_processor:
+        webrtc_ctx.video_processor.type = st.radio(
+            "Select transform type", ("burnout", "noop")
+        )
+
 def app_burnout_detection():
     """ Media streamings """
     MEDIAFILES = {
@@ -376,7 +426,7 @@ def app_burnout_detection():
 
     if media_file_info["type"] == "video" and webrtc_ctx.video_processor:
         webrtc_ctx.video_processor.type = st.radio(
-            "Select transform type", ("noop", "burnout")
+            "Select transform type", ("burnout", "noop")
         )
 
 
