@@ -49,6 +49,21 @@ HERE = Path(__file__).parent
 
 logger = logging.getLogger(__name__)
 
+WEBRTC_CLIENT_SETTINGS = ClientSettings(
+    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+    media_stream_constraints={
+        "video": True,
+        "audio": True,
+    },
+)
+
+PATH_TO_LABELS = os.path.join('models', 'labelmap.pbtxt')
+PATH_TO_SAVED_MODEL = os.path.join('models', 'saved_model')
+
+@st.cache(suppress_st_warning=True)
+def load_model():
+    return tf.saved_model.load(str(PATH_TO_SAVED_MODEL))
+
 def run_inference_for_single_image(model, image):
     image = np.asarray(image)
     # The input needs to be a tensor, convert it using `tf.convert_to_tensor`.
@@ -119,7 +134,7 @@ def app_realtime_burnout_detection():
         def __init__(self) -> None:
             self.type = "burnout"
             self.category_index = label_map_util.create_category_index_from_labelmap(PATH_TO_LABELS, use_display_name=True)
-            self.detection_model = tf.saved_model.load(str(PATH_TO_SAVED_MODEL))
+            self.detection_model = load_model()
 
 
         def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
@@ -166,9 +181,6 @@ def app_burnout_detection():
     media_file_label = "test.mp4 (local)"
     media_file_info = MEDIAFILES[media_file_label]
 
-    PATH_TO_LABELS = os.path.join('models', 'labelmap.pbtxt')
-    PATH_TO_SAVED_MODEL = os.path.join('models', 'saved_model')
-
     def create_player():
         if "local_file_path" in media_file_info:
             return MediaPlayer(str(media_file_info["local_file_path"]))
@@ -186,7 +198,7 @@ def app_burnout_detection():
         def __init__(self) -> None:
             self.type = "burnout"
             self.category_index = label_map_util.create_category_index_from_labelmap(PATH_TO_LABELS, use_display_name=True)
-            self.detection_model = tf.saved_model.load(str(PATH_TO_SAVED_MODEL))
+            self.detection_model = load_model()
 
 
         def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
